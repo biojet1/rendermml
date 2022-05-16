@@ -25,9 +25,10 @@ parser.add_argument(
 
 parser.add_argument(
     "--latex",
+    "-l",
     dest="latex",
-    action="store_true",
-    default=None,
+    action="count",
+    default=0,
     help="input is latex",
 )
 
@@ -64,8 +65,33 @@ parser.add_argument(
     help="Put symbols inside defs",
 )
 
+parser.add_argument(
+    "--group",
+    action="store_true",
+    default=None,
+    help="use group per node",
+)
 
-################
+parser.add_argument(
+    "--data_text",
+    action="store_true",
+    default=None,
+    help="add data-text attribute",
+)
+
+parser.add_argument(
+    "--attr_id",
+    action="store_true",
+    default=None,
+    help="pass id attribute",
+)
+
+parser.add_argument(
+    "--attr_data",
+    action="store_true",
+    default=None,
+    help="pass data-* attribute",
+)
 
 
 def as_source(path, mode="rb"):
@@ -88,6 +114,8 @@ args = parser.parse_args()
 
 from xml.etree import ElementTree as ET
 
+################
+
 kwopt = {}
 
 if args.size is not None:
@@ -104,25 +132,41 @@ if args.precision is not None:
 if args.font_file is not None:
     kwopt["font"] = args.font_file
 
-# print(args, kwopt)
+################
+
+opt = {"use_group": args.group, "data_text": args.data_text}
+
+if args.attr_id:
+    opt["pass_id_attr"] = True
+
+if args.attr_data:
+    opt["pass_data_attr"] = True
+
+
+################
 
 with as_source(args.src) as src:
     from .zmath import Math
 
-    if args.latex:
+    if args.latex > 1:
+        mml = Math.fromlatextext(src.read().decode("UTF-8").strip(), **kwopt)
+        svg = mml.svgxml(opt)
+    elif args.latex > 0:
         mml = Math.fromlatex(src.read().decode("UTF-8").strip(), **kwopt)
-        svg = mml.svgxml()
+        svg = mml.svgxml(opt)
     else:
         mml = ET.parse(src)
         mmr = Math(mml.getroot(), **kwopt)
-        svg = mmr.svgxml()
+        svg = mmr.svgxml(opt)
     if args.defs:
         defs = None
-        for p in list(svg.iter("symbol")):
-            if not defs:
-                defs = ET.SubElement(svg, "defs")
-            svg.remove(p)
-            defs.append(p)
+        for psym in [svg, *svg.findall(".//*[symbol]")]:
+            for symbol in list(psym.findall("symbol")):
+                if not defs:
+                    defs = ET.SubElement(svg, "defs")
+                psym.remove(symbol)
+                defs.append(symbol)
+
     with as_sink(args.dest, "wb") as w:
         etr = ET.ElementTree(svg)
         etr.write(w)

@@ -173,7 +173,7 @@ class Mnode(drawable.Drawable):
         ''' Get the last character in this node '''
         return None
 
-    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
         ''' Draw the node on the SVG
 
             Args:
@@ -198,10 +198,26 @@ class Mnode(drawable.Drawable):
             rect.set('width', fmt((self.bbox.xmax - self.bbox.xmin)))
             rect.set('height', fmt((self.bbox.ymax - self.bbox.ymin)))
             rect.set('fill', self.style['mathbackground'])  # type: ignore
+
+        if not opt:
+            pass
+        elif opt.get('use_group'):
+            g = ET.SubElement(svg, "g")
+            g.set("data-mml", self.element.tag)
+            if opt.get('data_text'):
+                if isinstance(self, Midentifier):
+                    g.set("data-text", getelementtext(self.element))
+            if opt.get('pass_id_attr'):
+                a = self.element.attrib.get('id')
+                a and g.set("id", a)
+            if opt.get('pass_data_attr'):
+                for (k, v) in self.element.attrib.items():
+                    k.startswith('data-') and v.set(k, v)
+            svg = g
             
         xi = yi = 0.
         for (xi, yi), node in zip(self.nodexy, self.nodes):
-            node.draw(x+xi, y+yi, svg)
+            node.draw(x+xi, y+yi, svg, opt)
         return x+xi, y+yi
 
 

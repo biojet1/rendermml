@@ -24,7 +24,7 @@ class Drawable:
         ''' Get the last character in this node '''
         return None
 
-    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
         raise NotImplementedError
 
         
@@ -60,7 +60,7 @@ class Glyph(Drawable):
         ''' Get the last character in this node '''
         return self.char
 
-    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
         ''' Draw the node on the SVG
 
             Args:
@@ -89,7 +89,7 @@ class HLine(Drawable):
         self.bbox = BBox(0, lw/2, self.length, self.lw)
         self.style = style if style is not None else {}
 
-    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
         ''' Draw the node on the SVG
 
             Args:
@@ -119,7 +119,7 @@ class VLine(Drawable):
         self.bbox = BBox(0, self.lw, 0, self.height)
         self.style = style if style is not None else {}
 
-    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
         ''' Draw the node on the SVG
 
             Args:
@@ -153,7 +153,7 @@ class Box(Drawable):
         self.bbox = BBox(0, self.width, 0, self.height)
         self.style = style if style is not None else {}
 
-    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
         ''' Draw the node on the SVG
 
             Args:
@@ -197,7 +197,7 @@ class Diagonal(Drawable):
             self.arroww = (10+self.lw*2) * math.cos(theta)
             self.arrowh = (10+self.lw*2) * math.sin(theta)
 
-    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
         ''' Draw the node on the SVG
 
             Args:
@@ -239,7 +239,7 @@ class Ellipse(Drawable):
         self.bbox = BBox(0, self.width, 0, self.height)
         self.style = style if style is not None else {}
 
-    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
         ''' Draw the node on the SVG
 
             Args:

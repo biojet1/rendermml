@@ -142,10 +142,10 @@ class Math:
                 mml.append(mathel)
         return cls(mml, size, font, svg2=svg2)
 
-    def svgxml(self) -> ET.Element:
+    def svgxml(self, opt=None) -> ET.Element:
         ''' Get standalone SVG of expression as XML Element Tree '''
         svg = ET.Element('svg')
-        self.node.draw(1, 0, svg)
+        self.node.draw(1, 0, svg, opt)
         bbox = self.node.bbox
         width = bbox.xmax - bbox.xmin + 2  # Add a 1-px border
         height = bbox.ymax - bbox.ymin + 2
@@ -162,7 +162,7 @@ class Math:
     def drawon(self, svg: ET.Element, x: float=0, y: float=0,
                color: str=None,
                halign: Halign='left', valign: Valign='baseline',
-               expand_viewbox: bool=True) -> ET.Element:
+               expand_viewbox: bool=True, opt={}) -> ET.Element:
         ''' Draw the math expression on an existing SVG
 
             Args:
@@ -191,7 +191,7 @@ class Math:
         svgelm = ET.SubElement(svg, 'g')  # Put it in a group
         if color:
             svgelm.attrib['fill'] = color
-        self.node.draw(x+xshift, y+yshift, svgelm)
+        self.node.draw(x+xshift, y+yshift, svgelm, opt)
         
         if expand_viewbox:
             try:
