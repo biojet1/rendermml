@@ -4,10 +4,10 @@ from typing import Optional, Union, MutableMapping
 import math
 import xml.etree.ElementTree as ET
 
+from .config import config
 from ziafont import Font
 from ziafont.fonttypes import BBox
 from ziafont.glyph import SimpleGlyph, fmt
-
 
 class Drawable:
     ''' Base class for drawable nodes '''
@@ -70,10 +70,12 @@ class Glyph(Drawable):
         '''
         symbols = svg.findall('symbol')
         symids = [sym.attrib.get('id') for sym in symbols]
-        if self.glyph.id not in symids and self.glyph.font.svg2:
+        if self.glyph.id not in symids and config.svg2:
             svg.append(self.glyph.svgsymbol())
         if not self.phantom:
-            svg.append(self.glyph.place(x, y, self.size))
+            path = self.glyph.place(x, y, self.size)
+            if path is not None:
+                svg.append(path)
             if 'mathcolor' in self.style:
                 svg[-1].set('fill', self.style['mathcolor'])  # type: ignore
         x += self.glyph.advance() * self.emscale
@@ -249,8 +251,6 @@ class Ellipse(Drawable):
         '''
         if not self.phantom:
             bar = ET.SubElement(svg, 'ellipse')
-#  <ellipse cx="100" cy="50" rx="100" ry="50" />
-
             bar.set('cx', fmt(x+self.width/2))
             bar.set('cy', fmt(y-self.height/2))
             bar.set('rx', fmt(self.width/2))
@@ -259,8 +259,3 @@ class Ellipse(Drawable):
             bar.set('stroke', self.style.get('mathcolor', 'black'))  # type: ignore
             bar.set('fill', self.style.get('mathbackground', 'none'))  # type: ignore
         return x+self.width, y
-    
-    
-
-
-#class Box(Primitive):

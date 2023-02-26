@@ -1,8 +1,9 @@
 ''' Main math rendering class '''
 
 from __future__ import annotations
-from typing import Union, Literal
+from typing import Union, Literal, Tuple, Optional, Dict
 import re
+from math import inf, cos, sin, radians
 from itertools import zip_longest
 import importlib.resources as pkg_resources
 import xml.etree.ElementTree as ET
@@ -13,6 +14,7 @@ from ziafont.glyph import fmt
 from .mathfont import MathFont
 from .nodes import makenode, getstyle
 from .escapes import unescape
+from .config import config
 
 try:
     from latex2mathml.converter import convert  # type: ignore
@@ -21,12 +23,7 @@ except ImportError:
 
 
 Halign = Literal['left', 'center', 'right']
-Valign = Literal['top', 'center', 'baseline', 'axis', 'bottom']
-
-
-def set_precision(p: int) -> None:
-    ''' Set decimal precision for SVG coordinates '''
-    zf.set_precision(p)
+Valign = Literal['top', 'center', 'base', 'axis', 'bottom']
 
 
 def denamespace(element: ET.Element) -> ET.Element:
@@ -50,16 +47,18 @@ def tex2mml(tex: str) -> str:
 
 
 class Math:
-    ''' Math Renderer
+    ''' MathML Element Renderer
 
         Args:
             mathml: MathML expression, in string or XML Element
             size: Base font size, pixels
             font: Filename of font file. Must contain MATH typesetting table.
-            svg2: Use SVG2.0 specification. Disable for compatibility.
     '''
+    # Math class doesn't have a color parameter since color is set
+    # by the <mathcolor> tags in MML. Since Math is a single line,
+    # alignment is done at the drawon function rather than the class level.
     def __init__(self, mathml: Union[str, ET.Element],
-                 size: float=24, font: str=None, svg2: bool=True):
+                 size: float=24, font: str=None):
         self.mathml = mathml
         self.size = size
 
@@ -71,7 +70,6 @@ class Math:
             self.font = MathFont(font, size)
             loadedfonts[font] = self.font
 
-        self.font.svg2 = svg2  # type:ignore
         if isinstance(mathml, str):
             mathml = unescape(mathml)
             mathml = ET.fromstring(mathml)
@@ -82,7 +80,8 @@ class Math:
         self.node = makenode(mathml, parent=self, size=size)  # type: ignore
 
     @classmethod
-    def fromlatex(cls, latex: str, size: float=24, mathstyle: str=None, color: str=None, font: str=None, svg2: bool=True):
+    def fromlatex(cls, latex: str, size: float=24, mathstyle: str=None,
+                  font: str=None, color: str=None):
         ''' Create Math Renderer from a single LaTeX expression. Requires
             latex2mathml Python package.
 
@@ -90,9 +89,8 @@ class Math:
                 latex: Latex string
                 size: Base font size
                 mathstyle: Style parameter for math, equivalent to "mathvariant" MathML attribute
-                color: Color parameter, equivalent to "mathcolor" attribute
                 font: Font file name
-                svg2: Use SVG2.0 specification. Disable for compatibility.
+                color: Color parameter, equivalent to "mathcolor" attribute
         '''
         if not convert:
             raise ValueError('fromlatex requires latex2mathml package.')
@@ -106,12 +104,13 @@ class Math:
         if color:
             mathml = ET.fromstring(mathml)
             mathml.attrib['mathcolor'] = color
-        return cls(mathml, size, font, svg2=svg2)
+        return cls(mathml, size, font)
 
     @classmethod
     def fromlatextext(cls, latex: str, size: float=24, mathstyle: str=None,
-                      textstyle: str=None, font: str=None, svg2=True):
-        ''' Create Math Renderer from a sentance containing zero or more LaTeX
+                      textstyle: str=None, font: str=None,
+                      color: str=None):
+        ''' Create Math Renderer from a sentence containing zero or more LaTeX
             expressions delimited by $..$, resulting in single MathML element.
             Requires latex2mathml Python package.
 
@@ -121,7 +120,7 @@ class Math:
                 mathstyle: Style parameter for math, equivalent to "mathvariant" MathML attribute
                 textstyle: Style parameter for text, equivalent to "mathvariant" MathML attribute
                 font: Font file name
-                svg2: Use SVG2.0 specification. Disable for compatibility.
+                color: Color parameter, equivalent to "mathcolor" attribute
         '''
         # Extract each $..$, convert to MathML, but the raw text in <mtext>, and join
         # into a single <math>
@@ -140,7 +139,9 @@ class Math:
                 if mathstyle:
                     mathel.attrib['mathvariant'] = mathstyle
                 mml.append(mathel)
-        return cls(mml, size, font, svg2=svg2)
+        if color:
+            mml.attrib['mathcolor'] = color
+        return cls(mml, size, font)
 
     def svgxml(self) -> ET.Element:
         ''' Get standalone SVG of expression as XML Element Tree '''
@@ -154,29 +155,25 @@ class Math:
         svg.attrib['width'] = fmt(width)
         svg.attrib['height'] = fmt(height)
         svg.attrib['xmlns'] = 'http://www.w3.org/2000/svg'
-        if not self.font.svg2:  # type: ignore
+        if not config.svg2:
             svg.attrib['xmlns:xlink'] = 'http://www.w3.org/1999/xlink'
-        svg.attrib['viewBox'] = f'0 {fmt(-bbox.ymax-1)} {fmt(width)} {fmt(height)}'
+        svg.attrib['viewBox'] = f'{fmt(bbox.xmin-1)} {fmt(-bbox.ymax-1)} {fmt(width)} {fmt(height)}'
         return svg
 
     def drawon(self, svg: ET.Element, x: float=0, y: float=0,
-               color: str=None,
-               halign: Halign='left', valign: Valign='baseline',
-               expand_viewbox: bool=True) -> ET.Element:
+               halign: Halign='left', valign: Valign='base') -> ET.Element:
         ''' Draw the math expression on an existing SVG
 
             Args:
                 x: Horizontal position in SVG coordinates
                 y: Vertical position in SVG coordinates
                 svg: The image (top-level svg XML object) to draw on
-                color: Color name or #000000 hex code
                 halign: Horizontal alignment
                 valign: Vertical alignment
-                expand_viewbox: Update the viewbox of the svg element
 
             Note: Horizontal alignment can be the typical 'left', 'center', or 'right'.
             Vertical alignment can be 'top', 'bottom', or 'center' to align with the
-            expression's bounding box, or 'baseline' to align with the bottom
+            expression's bounding box, or 'base' to align with the bottom
             of the first text element, or 'axis', aligning with the height of a minus
             sign above the baseline.
         '''
@@ -189,33 +186,7 @@ class Math:
                   'right': -width}.get(halign, 0)
 
         svgelm = ET.SubElement(svg, 'g')  # Put it in a group
-        if color:
-            svgelm.attrib['fill'] = color
         self.node.draw(x+xshift, y+yshift, svgelm)
-        
-        if expand_viewbox:
-            try:
-                viewx, viewy, vieww, viewh = [float(f) for f in svg.attrib['viewBox'].split()]
-            except KeyError:
-                viewx = viewy = vieww = viewh = 0
-
-            x += xshift
-            y += yshift
-            ymax = y - self.node.bbox.ymin
-            ymin = y - self.node.bbox.ymax
-            xmax = x + self.node.bbox.xmax
-            xmin = x + self.node.bbox.xmin
-            viewymax = viewy+viewh
-            viewxmax = viewx+vieww
-
-            viewxmax = max(viewxmax, xmax)
-            viewymax = max(viewymax, ymax)
-            viewx = min(viewx, xmin)
-            viewy = min(viewy, ymin)
-
-            svg.attrib['width'] = fmt(viewxmax-xmin)
-            svg.attrib['height'] = fmt(viewymax-ymin)
-            svg.attrib['viewBox'] = f'{fmt(viewx)} {fmt(viewy)} {fmt(viewxmax-viewx)} {fmt(viewymax-viewy)}'
         return svgelm
 
     def svg(self) -> str:
@@ -241,7 +212,7 @@ class Math:
         ''' Get size of rendered text '''
         return (self.node.bbox.xmax - self.node.bbox.xmin,
                 self.node.bbox.ymax - self.node.bbox.ymin)
-    
+
     def getyofst(self) -> float:
         ''' Y-shift from bottom of bbox to 0 '''
         return self.node.bbox.ymin
@@ -249,27 +220,51 @@ class Math:
 
 class Text:
     ''' Mixed text and latex math, with math delimited by $..$. Drawn to SVG.
+        Can contain multiple lines.
 
         Args:
             s: string to write
             textfont: font filename or family name for text
-            mathfont: font filename or family name for math
+            mathfont: font filename for math
+            mathstyle: Style parameter for math
             size: font size in points
             linespacing: spacing between lines
+            color: color of text
             halign: horizontal alignment
             valign: vertical alignment
-            svg2: Use SVG version 2.0. Disable for better
-                browser compatibility.
+            rotation: Rotation angle in degrees
+            rotation_mode: Either 'default' or 'anchor', to
+                mimic Matplotlib behavoir. See:
+                https://matplotlib.org/stable/gallery/text_labels_and_annotations/demo_text_rotation_mode.html
+
     '''
     def __init__(self, s, textfont: str=None, mathfont: str=None,
-                 size: float=24, linespacing: float=1,
-                 svg2=True):
+                 mathstyle: str=None, size: float=24, linespacing: float=1,
+                 color: str=None,
+                 halign: str='left', valign: str='base',
+                 rotation: float=0, rotation_mode: str='anchor'):
         self.str = s
-        self.textfont = zf.Font(textfont, svg2=svg2)
         self.mathfont = mathfont
+        self.mathstyle = mathstyle
         self.size = size
         self.linespacing = linespacing
-        self._svg2 = svg2
+        self.color = color
+        self._halign = halign
+        self._valign = valign
+        self.rotation = rotation
+        self.rotation_mode = rotation_mode
+        self.textfont: Optional[Union[MathFont, zf.Font]]
+
+        # textfont can be a path to font, or style type like "serif".
+        # If style type, use Stix font variation
+        if textfont is None:
+            textfont = 'sans'
+        if textfont in ['sans', 'sans-serif', 'serif']:
+            self.textfont = None
+            self.textstyle = textfont
+        else:
+            self.textfont = zf.Font(textfont)
+            self.textstyle = 'sans'
 
     def svg(self) -> str:
         ''' Get expression as SVG string '''
@@ -282,7 +277,13 @@ class Text:
     def svgxml(self) -> ET.Element:
         ''' Get standalone SVG of expression as XML Element Tree '''
         svg = ET.Element('svg')
-        self.drawon(svg)
+        svgelm, (x1, x2, y1, y2) = self._drawon(svg)
+        svg.attrib['width'] = fmt(x2-x1)
+        svg.attrib['height'] = fmt(y2-y1)
+        svg.attrib['xmlns'] = 'http://www.w3.org/2000/svg'
+        if not config.svg2:
+            svg.attrib['xmlns:xlink'] = 'http://www.w3.org/1999/xlink'
+        svg.attrib['viewBox'] = f'{fmt(x1)} {fmt(y1)} {fmt(x2-x1)} {fmt(y2-y1)}'
         return svg
 
     def save(self, fname):
@@ -291,7 +292,7 @@ class Text:
             f.write(self.svg())
 
     def drawon(self, svg: ET.Element, x: float=0, y: float=0,
-               halign: str='left', valign: str='bottom') -> ET.Element:
+               halign: str=None, valign: str=None) -> ET.Element:
         ''' Draw text on existing SVG element
 
             Args:
@@ -301,64 +302,157 @@ class Text:
                 halign: Horizontal alignment
                 valign: Vertical alignment
         '''
+        svgelm, _ = self._drawon(svg, x, y, halign, valign)
+        return svgelm
+
+    def _drawon(self, svg: ET.Element, x: float=0, y: float=0,
+                halign: str=None, valign: str=None) -> Tuple[ET.Element, Tuple[float, float, float, float]]:
+        ''' Draw text on existing SVG element
+
+            Args:
+                svg: Element to draw on
+                x: x-position
+                y: y-position
+                halign: Horizontal alignment
+                valign: Vertical alignment
+        '''
+        halign = self._halign if halign is None else halign
+        valign = self._valign if valign is None else valign
+
         lines = self.str.splitlines()
         svglines = []
+        svgelm = ET.SubElement(svg, 'g')
 
         # Split into lines and "parts"
+        linesizes = []
         for line in lines:
             svgparts = []
             parts = re.split(r'(\$.*?\$)', line)
+            partsizes = []
             for part in parts:
                 if not part:
                     continue
                 if part.startswith('$') and part.endswith('$'):  # Math
                     math = Math.fromlatex(part.replace('$', ''), font=self.mathfont,
-                                          size=self.size, svg2=self._svg2)
+                                          mathstyle=self.mathstyle,
+                                          size=self.size, color=self.color)
                     svgparts.append(math)
+                    partsizes.append(math.getsize())
                 else:  # Text
-                    txt = zf.Text(part, font=self.textfont, size=self.size, svg2=self._svg2)
+                    if self.textfont:
+                        txt = zf.Text(part, font=self.textfont, size=self.size, color=self.color)
+                        partsizes.append(txt.getsize())
+                    else:
+                        txt = Math.fromlatextext(part, textstyle=self.textstyle,
+                                                 size=self.size, color=self.color)
+                        partsizes.append((txt.node.bbox.xmax - txt.node.bbox.xmin,  # type: ignore
+                                          txt.node.size))  # type: ignore
                     svgparts.append(txt)
-            if len(svgparts):
+            if len(svgparts) > 0:
                 svglines.append(svgparts)
+                linesizes.append(partsizes)
 
-        linesizes = [[p.getsize() for p in line] for line in svglines]
+        lineofsts = [min([p.getyofst() for p in line]) for line in svglines]
         lineheights = [max(p[1] for p in line) for line in linesizes]
         linewidths = [sum(p[0] for p in line) for line in linesizes]
-        lineofsts = [min(p.getyofst() for p in line) for line in svglines]
 
         if valign == 'bottom':
-            yloc = y + sum(lineofsts) - sum(lineheights[1:])
+            ystart = y + sum(lineofsts) - sum(lineheights[1:])
         elif valign == 'top':
-            yloc = y + lineheights[0] + lineofsts[0]
+            ystart = y + lineheights[0] + lineofsts[0]
         elif valign == 'center':
-            yloc = y - sum(lineheights)/2 + (lineheights[0] - lineofsts[0])/2
+            ystart = y + lineheights[0] + lineofsts[0] - sum(lineheights)/2
         else:  # 'base'
-            yloc = y
+            ystart = y
 
+        xmin = ymin = inf
+        xmax = ymax = -inf
+        yloc = ystart
         for i, line in enumerate(svglines):
             xloc = x
-            sizes = [p.getsize() for p in line]
-
             xloc += {'left': 0,
                      'right': -linewidths[i],
                      'center': -linewidths[i]/2}.get(halign, 0)
 
-            try:
-                drop = min(p.node.bbox.ymin for p in line if isinstance(p, Math))
-            except ValueError:
-                drop = 0
-            if i > 0 and lineheights[i] > self.linespacing * self.size:
-                yloc += (lineheights[i] - self.linespacing * self.size)
-            for part, size in zip(line, sizes):
-                part.drawon(svg, xloc, yloc)
-                xloc += size[0]
-            yloc += self.linespacing * self.size
-            yloc -= drop
+            xmin = min(xmin, xloc)
+            xmax = max(xmax, xloc+linewidths[i])
 
-        return svg
+            # Include extra height of tall math expressions
+            drop = 0
+            if i > 0:
+                try:
+                    drop = min(p.node.bbox.ymin for p in line if isinstance(p, Math))
+                except ValueError:
+                    drop = 0
+
+            yloc -= drop
+            ymin = min(ymin, yloc-lineheights[i])
+            ymax = max(ymax, yloc-lineofsts[i])
+            for part, size in zip(line, linesizes[i]):
+                part.drawon(svgelm, xloc, yloc)
+                xloc += size[0]
+            yloc += lineheights[i] * self.linespacing
+
+        if self.rotation:
+            costh = cos(radians(self.rotation))
+            sinth = sin(radians(self.rotation))
+            p1 = (xmin-x, ymin-y)  # Corners relative to rotation point
+            p2 = (xmax-x, ymin-y)
+            p3 = (xmax-x, ymax-y)
+            p4 = (xmin-x, ymax-y)
+            x1 = x + (p1[0]*costh + p1[1]*sinth)
+            x2 = x + (p2[0]*costh + p2[1]*sinth)
+            x3 = x + (p3[0]*costh + p3[1]*sinth)
+            x4 = x + (p4[0]*costh + p4[1]*sinth)
+            y1 = y - (p1[0]*sinth - p1[1]*costh)
+            y2 = y - (p2[0]*sinth - p2[1]*costh)
+            y3 = y - (p3[0]*sinth - p3[1]*costh)
+            y4 = y - (p4[0]*sinth - p4[1]*costh)
+            bbox = (min(x1, x2, x3, x4), max(x1, x2, x3, x4),
+                    min(y1, y2, y3, y4), max(y1, y2, y3, y4))
+
+            xform = ''
+            if self.rotation_mode == 'default':
+                dx = {'left': x - bbox[0],
+                      'right': x - bbox[1],
+                      'center': x - (bbox[1]+bbox[0])/2}.get(halign, 0)
+                dy = {'top': y - bbox[2],
+                      'bottom': y - bbox[3],
+                      'base': -sinth*dx,
+                      'center': y - (bbox[3]+bbox[2])/2}.get(valign, 0)
+                xform = f'translate({dx} {dy})'
+                bbox = (bbox[0]+dx, bbox[1]+dx,
+                        bbox[2]+dy, bbox[3]+dy)
+
+            xform += f' rotate({-self.rotation} {x} {y})'
+            if config.debug:
+                rect = ET.SubElement(svg, 'rect')
+                rect.attrib['x'] = fmt(bbox[0])
+                rect.attrib['y'] = fmt(bbox[2])
+                rect.attrib['width'] = fmt(bbox[1]-bbox[0])
+                rect.attrib['height'] = fmt(bbox[3]-bbox[2])
+                rect.attrib['fill'] = 'none'
+                rect.attrib['stroke'] = 'red'
+
+            svgelm.set('transform', xform)
+            xmin, xmax, ymin, ymax = bbox
+
+        return svgelm, (xmin, xmax, ymin, ymax)
+
+    def getsize(self):
+        ''' Get pixel width and height of Text. '''
+        svg = ET.Element('svg')
+        _, (xmin, xmax, ymin, ymax) = self._drawon(svg)
+        return (xmax-xmin, ymax-ymin)
+
+    def bbox(self):
+        ''' Get bounding box (xmin, xmax, ymin, ymax) of Text. '''
+        svg = ET.Element('svg')
+        _, (xmin, xmax, ymin, ymax) = self._drawon(svg)
+        return (xmin, xmax, ymin, ymax)
 
 
 # Cache the loaded fonts to prevent reloading all the time
 with pkg_resources.path('ziamath.fonts', 'STIXTwoMath-Regular.ttf') as p:
     fontname = p
-loadedfonts = {'default': MathFont(fontname)}
+loadedfonts: Dict[str, Union[zf.Font, MathFont]] = {'default': MathFont(fontname)}
