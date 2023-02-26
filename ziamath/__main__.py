@@ -1,4 +1,5 @@
 import argparse
+from .config import config
 
 parser = argparse.ArgumentParser(description="Process some integers.")
 
@@ -122,42 +123,39 @@ if args.size is not None:
     kwopt["size"] = args.size
 
 if args.cache is not None:
-    kwopt["svg2"] = args.cache
+    config.svg2 = args.cache
 
 if args.precision is not None:
-    from .zmath import set_precision
-
-    set_precision(args.precision)
+    config.precision = args.precision
 
 if args.font_file is not None:
     kwopt["font"] = args.font_file
 
-################
+if args.group is not None:
+    config.use_group = args.group
 
-opt = {"use_group": args.group, "data_text": args.data_text}
+if args.attr_id is not None:
+    config.pass_id_attr = args.attr_id
 
-if args.attr_id:
-    opt["pass_id_attr"] = True
+if args.attr_data is not None:
+    config.pass_data_attr = args.attr_data
 
-if args.attr_data:
-    opt["pass_data_attr"] = True
-
-
-################
+if args.data_text is not None:
+    config.data_text = args.data_text
 
 with as_source(args.src) as src:
     from .zmath import Math
 
     if args.latex > 1:
         mml = Math.fromlatextext(src.read().decode("UTF-8").strip(), **kwopt)
-        svg = mml.svgxml(opt)
+        svg = mml.svgxml()
     elif args.latex > 0:
         mml = Math.fromlatex(src.read().decode("UTF-8").strip(), **kwopt)
-        svg = mml.svgxml(opt)
+        svg = mml.svgxml()
     else:
         mml = ET.parse(src)
         mmr = Math(mml.getroot(), **kwopt)
-        svg = mmr.svgxml(opt)
+        svg = mmr.svgxml()
     if args.defs:
         defs = None
         for psym in [svg, *svg.findall(".//*[symbol]")]:

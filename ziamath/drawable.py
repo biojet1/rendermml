@@ -4,10 +4,10 @@ from typing import Optional, Union, MutableMapping
 import math
 import xml.etree.ElementTree as ET
 
+from .config import config
 from ziafont import Font
 from ziafont.fonttypes import BBox
 from ziafont.glyph import SimpleGlyph, fmt
-
 
 class Drawable:
     ''' Base class for drawable nodes '''
@@ -24,7 +24,7 @@ class Drawable:
         ''' Get the last character in this node '''
         return None
 
-    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
         raise NotImplementedError
 
         
@@ -60,7 +60,7 @@ class Glyph(Drawable):
         ''' Get the last character in this node '''
         return self.char
 
-    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
         ''' Draw the node on the SVG
 
             Args:
@@ -70,10 +70,12 @@ class Glyph(Drawable):
         '''
         symbols = svg.findall('symbol')
         symids = [sym.attrib.get('id') for sym in symbols]
-        if self.glyph.id not in symids and self.glyph.font.svg2:
+        if self.glyph.id not in symids and config.svg2:
             svg.append(self.glyph.svgsymbol())
         if not self.phantom:
-            svg.append(self.glyph.place(x, y, self.size))
+            path = self.glyph.place(x, y, self.size)
+            if path is not None:
+                svg.append(path)
             if 'mathcolor' in self.style:
                 svg[-1].set('fill', self.style['mathcolor'])  # type: ignore
         x += self.glyph.advance() * self.emscale
@@ -89,7 +91,7 @@ class HLine(Drawable):
         self.bbox = BBox(0, lw/2, self.length, self.lw)
         self.style = style if style is not None else {}
 
-    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
         ''' Draw the node on the SVG
 
             Args:
@@ -119,7 +121,7 @@ class VLine(Drawable):
         self.bbox = BBox(0, self.lw, 0, self.height)
         self.style = style if style is not None else {}
 
-    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
         ''' Draw the node on the SVG
 
             Args:
@@ -153,7 +155,7 @@ class Box(Drawable):
         self.bbox = BBox(0, self.width, 0, self.height)
         self.style = style if style is not None else {}
 
-    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
         ''' Draw the node on the SVG
 
             Args:
@@ -197,7 +199,7 @@ class Diagonal(Drawable):
             self.arroww = (10+self.lw*2) * math.cos(theta)
             self.arrowh = (10+self.lw*2) * math.sin(theta)
 
-    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
         ''' Draw the node on the SVG
 
             Args:
@@ -239,7 +241,7 @@ class Ellipse(Drawable):
         self.bbox = BBox(0, self.width, 0, self.height)
         self.style = style if style is not None else {}
 
-    def draw(self, x: float, y: float, svg: ET.Element, opt: dict) -> tuple[float, float]:
+    def draw(self, x: float, y: float, svg: ET.Element) -> tuple[float, float]:
         ''' Draw the node on the SVG
 
             Args:
@@ -249,8 +251,6 @@ class Ellipse(Drawable):
         '''
         if not self.phantom:
             bar = ET.SubElement(svg, 'ellipse')
-#  <ellipse cx="100" cy="50" rx="100" ry="50" />
-
             bar.set('cx', fmt(x+self.width/2))
             bar.set('cy', fmt(y-self.height/2))
             bar.set('rx', fmt(self.width/2))
@@ -259,8 +259,3 @@ class Ellipse(Drawable):
             bar.set('stroke', self.style.get('mathcolor', 'black'))  # type: ignore
             bar.set('fill', self.style.get('mathbackground', 'none'))  # type: ignore
         return x+self.width, y
-    
-    
-
-
-#class Box(Primitive):
